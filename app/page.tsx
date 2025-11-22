@@ -9,6 +9,10 @@ import SpotifyTab from "@/components/spotify-tab"
 import SettingsTab from "@/components/settings-tab"
 import AboutTab from "@/components/about-tab"
 import { Music } from "lucide-react"
+import axios from "axios"
+
+// 🚨 REPLACE THIS WITH YOUR REAL HUGGING FACE URL IF DIFFERENT
+const API_URL = "https://deltaworld-moodflix-backend.hf.space"; 
 
 export default function Home() {
   const { isSignedIn } = useUser()
@@ -25,6 +29,22 @@ export default function Home() {
       window.history.replaceState({}, document.title, window.location.pathname)
     }
   }, [])
+
+  // --- NEW: Function to handle the redirect properly ---
+  const handleSpotifyConnect = async () => {
+    try {
+        // 1. Fetch the dynamic login URL from the backend
+        const res = await axios.get(`${API_URL}/spotify/login`);
+        
+        // 2. Force the browser to go there
+        if (res.data.auth_url) {
+            window.location.href = res.data.auth_url;
+        }
+    } catch (e) {
+        console.error("Spotify Connect Error:", e);
+        alert("Could not connect to Spotify API. Check console.");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-quote">
@@ -46,7 +66,7 @@ export default function Home() {
           {/* --- CONNECTED: Show Spotify Logic --- */}
           {activeTab === "music" && spotifyToken && <SpotifyTab spotifyToken={spotifyToken} />}
           
-          {/* --- NOT CONNECTED: Show Connect Button (This is the change) --- */}
+          {/* --- NOT CONNECTED: Show Connect Button (UPDATED) --- */}
           {activeTab === "music" && !spotifyToken && (
             <div className="flex flex-col items-center justify-center py-16 bg-white/5 rounded-3xl border border-white/10 text-center">
                 <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mb-4">
@@ -55,13 +75,13 @@ export default function Home() {
                 <h3 className="text-xl font-medium text-white mb-2">Connect your Spotify</h3>
                 <p className="text-gray-400 mb-6 text-sm">We need access to your listening history to recommend songs.</p>
                 
-                {/* REDIRECT TO BACKEND LOGIN */}
-                <a 
-                    href="https://deltaworld-moodflix-backend.hf.space/spotify/login"
+                {/* ✅ NEW WORKING BUTTON */}
+                <button 
+                    onClick={handleSpotifyConnect}
                     className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-green-900/20 transition-transform hover:scale-105"
                 >
                     Connect Spotify Account
-                </a>
+                </button>
             </div>
           )}
 
