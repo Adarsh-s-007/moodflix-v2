@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { useState, useRef } from "react"
+import { useState, useRef, useEffect } from "react" // Added useEffect
 import { Upload } from "lucide-react"
 import axios from "axios"
 import { useAuth } from "@clerk/nextjs"
@@ -34,6 +33,18 @@ export default function ControlCenter({ category }: ControlCenterProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { getToken } = useAuth()
 
+  // Spotify Token State
+  const [spotifyToken, setSpotifyToken] = useState("")
+
+  // 1. Capture Spotify Token from URL on load
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search)
+      const token = params.get("spotify_token")
+      if (token) setSpotifyToken(token)
+    }
+  }, [])
+
   const handleMoodChange = (value: string) => {
     setMood(value)
   }
@@ -43,20 +54,22 @@ export default function ControlCenter({ category }: ControlCenterProps) {
     if (!file) return
 
     const formData = new FormData()
-    formData.append("image", file)
+    formData.append("file", file) // Changed 'image' to 'file' to match backend
 
     try {
       setLoading(true)
       setError(null)
+      const token = await getToken()
 
       const response = await axios.post("https://deltaworld-moodflix-backend.hf.space/analyze-face", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
+        headers: { 
+            "Content-Type": "multipart/form-data",
+            Authorization: `Bearer ${token || ""}`
+        },
       })
 
       const detectedMood = response.data.detected_mood
       setMood(detectedMood)
-
-      // Trigger search automatically after mood detection
       await handleSearch(detectedMood)
     } catch (err) {
       console.error("[v0] Error analyzing face:", err)
@@ -68,7 +81,7 @@ export default function ControlCenter({ category }: ControlCenterProps) {
 
   const handleSearch = async (detectedMood?: string) => {
     const searchMood = detectedMood || mood
-    if (!searchMood.trim()) {
+    if (!searchMood.trim() && category !== "Music") {
       setError("Please enter a mood or upload a selfie")
       return
     }
@@ -79,38 +92,51 @@ export default function ControlCenter({ category }: ControlCenterProps) {
 
       const token = await getToken()
 
-      // --- FIXED: Convert Array to Number ---
-      const safeIntensity = Array.isArray(intensity) ? intensity[0] : parseInt(intensity.toString());
-      const safeKidsMode = Boolean(kidsMode);
-      const safeToken = null;
+      // --- CRITICAL FIXES ---
+      const safeIntensity = Array.isArray(intensity) ? intensity[0] : Number.parseInt(intensity.toString())
+      const safeKidsMode = Boolean(kidsMode)
+      
+      // FIX: Use the state token OR empty string. NEVER send null.
+      const safeToken = spotifyToken || "" 
+
+      const payload = {
+          mood: searchMood || "happy",
+          category: category === "Music" ? "music" : category.toLowerCase().includes("tv") ? "tv" : category.toLowerCase(),
+          language,
+          era,
+          intensity: safeIntensity,
+          kids_mode: safeKidsMode,
+          spotify_token: safeToken, // <--- This fixes the 422 Error
+      }
+
+      console.log("Sending Payload:", payload)
 
       const response = await axios.post(
         "https://deltaworld-moodflix-backend.hf.space/recommend",
-        {
-          mood: searchMood,
-          category: category === "Music" ? "Spotify" : category,
-          language,
-          era,
-          intensity: safeIntensity, // <--- The Fix
-          kids_mode: safeKidsMode,
-          spotify_token: safeToken,
-        },
+        payload,
         {
           headers: {
-            Authorization: `Bearer ${token}`,
+            Authorization: `Bearer ${token || ""}`,
           },
         },
       )
 
       if (response.data.error === "Spotify Login Required") {
-        window.location.href = response.data.auth_url
-        return
+        if (response.data.auth_url) {
+            window.location.href = response.data.auth_url
+            return
+        }
       }
 
-      setResults(response.data.results || [])
-    } catch (err) {
+      const dataList = response.data.results || []
+      setResults(dataList)
+      
+      if (dataList.length === 0) setError("No recommendations found.")
+
+    } catch (err: any) {
       console.error("[v0] Search error:", err)
-      setError("Failed to get recommendations. Please try again.")
+      const msg = err.response?.data?.detail?.[0]?.msg || "Failed to get recommendations."
+      setError(`Error: ${msg}`)
     } finally {
       setLoading(false)
     }
@@ -119,7 +145,7 @@ export default function ControlCenter({ category }: ControlCenterProps) {
   return (
     <div className="space-y-6">
       <div className="glass p-8 space-y-6">
-        {/* Top Row: Kids Mode & Language & Era */}
+        {/* Top Row */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="flex items-center justify-between p-4 bg-white/5 rounded-lg border border-white/10">
             <label className="text-sm font-medium">Kids Mode</label>
@@ -129,75 +155,54 @@ export default function ControlCenter({ category }: ControlCenterProps) {
                 kidsMode ? "bg-blue-400 shadow-lg shadow-blue-400/50" : "bg-muted"
               }`}
             >
-              <div
-                className={`w-5 h-5 bg-white rounded-full transition-transform ${
-                  kidsMode ? "translate-x-6" : "translate-x-0.5"
-                }`}
-              />
+              <div className={`w-5 h-5 bg-white rounded-full transition-transform ${kidsMode ? "translate-x-6" : "translate-x-0.5"}`} />
             </button>
           </div>
 
           <div className="p-4 bg-white/5 rounded-lg border border-white/10">
             <label className="text-sm font-medium block mb-2">Language</label>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="w-full bg-input text-foreground rounded px-3 py-1 text-sm border border-white/10"
-            >
-              <option>English</option>
-              <option>Hindi</option>
-              <option>Spanish</option>
-              <option>Korean</option>
-              <option>Japanese</option>
+            <select value={language} onChange={(e) => setLanguage(e.target.value)} className="w-full bg-input text-foreground rounded px-3 py-1 text-sm border border-white/10">
+              <option value="en">English</option>
+              <option value="hi">Hindi</option>
+              <option value="es">Spanish</option>
+              <option value="ko">Korean</option>
+              <option value="ja">Japanese</option>
             </select>
           </div>
 
           <div className="p-4 bg-white/5 rounded-lg border border-white/10">
             <label className="text-sm font-medium block mb-2">Era</label>
-            <select
-              value={era}
-              onChange={(e) => setEra(e.target.value)}
-              className="w-full bg-input text-foreground rounded px-3 py-1 text-sm border border-white/10"
-            >
+            <select value={era} onChange={(e) => setEra(e.target.value)} className="w-full bg-input text-foreground rounded px-3 py-1 text-sm border border-white/10">
               <option>Any</option>
-              <option>80s</option>
-              <option>90s</option>
-              <option>2000s</option>
-              <option>2010s</option>
               <option>2020s</option>
+              <option>2010s</option>
+              <option>2000s</option>
+              <option>90s</option>
+              <option>80s</option>
             </select>
           </div>
         </div>
 
-        {/* Middle Row: Text Input & Selfie Dropzone */}
+        {/* Middle Row */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className="text-sm font-medium block mb-2">How are you feeling?</label>
             <input
               type="text"
-              placeholder="e.g., Nostalgic, Energetic, Melancholic"
+              placeholder="e.g., Nostalgic, Energetic..."
               value={mood}
               onChange={(e) => handleMoodChange(e.target.value)}
-              className="w-full bg-input border border-primary/50 text-foreground rounded-lg px-4 py-3 placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent shadow-lg shadow-primary/10"
+              className="w-full bg-input border border-primary/50 text-foreground rounded-lg px-4 py-3 placeholder-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
             />
           </div>
 
           <div
-            onDragOver={(e) => {
-              e.preventDefault()
-              e.currentTarget.classList.add("border-primary", "bg-primary/10")
-            }}
-            onDragLeave={(e) => {
-              e.preventDefault()
-              e.currentTarget.classList.remove("border-primary", "bg-primary/10")
-            }}
+            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-primary", "bg-primary/10") }}
+            onDragLeave={(e) => { e.preventDefault(); e.currentTarget.classList.remove("border-primary", "bg-primary/10") }}
             onDrop={(e) => {
-              e.preventDefault()
-              e.currentTarget.classList.remove("border-primary", "bg-primary/10")
-              const files = e.dataTransfer.files
-              if (files[0]) {
-                handleSelfieUpload({ target: { files } } as any)
-              }
+              e.preventDefault(); e.currentTarget.classList.remove("border-primary", "bg-primary/10");
+              const files = e.dataTransfer.files;
+              if (files[0]) handleSelfieUpload({ target: { files } } as any)
             }}
             className="border-2 border-dashed border-muted rounded-lg p-6 text-center cursor-pointer hover:bg-white/5 transition-colors"
             onClick={() => fileInputRef.current?.click()}
@@ -208,7 +213,7 @@ export default function ControlCenter({ category }: ControlCenterProps) {
           </div>
         </div>
 
-        {/* Bottom Row: Intensity Slider & Search Button */}
+        {/* Bottom Row */}
         <div className="space-y-4">
           <div>
             <div className="flex items-center justify-between mb-2">
@@ -216,10 +221,7 @@ export default function ControlCenter({ category }: ControlCenterProps) {
               <span className="text-sm text-primary font-semibold">{intensity[0]}/10</span>
             </div>
             <input
-              type="range"
-              min="1"
-              max="10"
-              value={intensity[0]}
+              type="range" min="1" max="10" value={intensity[0]}
               onChange={(e) => setIntensity([Number.parseInt(e.target.value)])}
               className="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-primary"
             />
@@ -228,7 +230,7 @@ export default function ControlCenter({ category }: ControlCenterProps) {
           <button
             onClick={() => handleSearch()}
             disabled={loading}
-            className="w-full py-3 bg-gradient-to-r from-primary to-secondary text-primary-foreground font-semibold rounded-lg hover:shadow-lg hover:shadow-primary/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            className="w-full py-3 bg-gradient-to-r from-primary to-secondary text-primary-foreground font-semibold rounded-lg hover:shadow-lg hover:shadow-primary/30 transition-all disabled:opacity-50"
           >
             {loading ? "Finding Recommendations..." : "Find Recommendations"}
           </button>
@@ -237,7 +239,6 @@ export default function ControlCenter({ category }: ControlCenterProps) {
         </div>
       </div>
 
-      {/* Results Display */}
       {results.length > 0 && <ResultsDisplay results={results} />}
     </div>
   )
