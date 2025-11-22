@@ -8,6 +8,7 @@ import ControlCenter from "@/components/control-center"
 import SpotifyTab from "@/components/spotify-tab"
 import SettingsTab from "@/components/settings-tab"
 import AboutTab from "@/components/about-tab"
+import { Music } from "lucide-react"
 
 export default function Home() {
   const { isSignedIn } = useUser()
@@ -41,8 +42,29 @@ export default function Home() {
           {activeTab === "movies" && <ControlCenter category="Movies" />}
           {activeTab === "tv" && <ControlCenter category="TV Shows" />}
           {activeTab === "books" && <ControlCenter category="Books" />}
+          
+          {/* --- CONNECTED: Show Spotify Logic --- */}
           {activeTab === "music" && spotifyToken && <SpotifyTab spotifyToken={spotifyToken} />}
-          {activeTab === "music" && !spotifyToken && <ControlCenter category="Music" />}
+          
+          {/* --- NOT CONNECTED: Show Connect Button (This is the change) --- */}
+          {activeTab === "music" && !spotifyToken && (
+            <div className="flex flex-col items-center justify-center py-16 bg-white/5 rounded-3xl border border-white/10 text-center">
+                <div className="w-16 h-16 bg-green-500/10 rounded-full flex items-center justify-center mb-4">
+                    <Music className="w-8 h-8 text-green-400" />
+                </div>
+                <h3 className="text-xl font-medium text-white mb-2">Connect your Spotify</h3>
+                <p className="text-gray-400 mb-6 text-sm">We need access to your listening history to recommend songs.</p>
+                
+                {/* REDIRECT TO BACKEND LOGIN */}
+                <a 
+                    href="https://deltaworld-moodflix-backend.hf.space/spotify/login"
+                    className="bg-green-600 hover:bg-green-500 text-white px-8 py-3 rounded-xl font-bold shadow-lg shadow-green-900/20 transition-transform hover:scale-105"
+                >
+                    Connect Spotify Account
+                </a>
+            </div>
+          )}
+
           {activeTab === "settings" && <SettingsTab />}
           {activeTab === "about" && <AboutTab />}
         </main>
