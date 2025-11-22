@@ -79,10 +79,10 @@ export default function ControlCenter({ category }: ControlCenterProps) {
 
       const token = await getToken()
 
-      // Sanitization steps from spec
-      const safeIntensity = Array.isArray(intensity) ? intensity[0] : Number.parseInt(intensity)
-      const safeKidsMode = Boolean(kidsMode)
-      const safeToken = null
+      // --- FIXED: Convert Array to Number ---
+      const safeIntensity = Array.isArray(intensity) ? intensity[0] : parseInt(intensity.toString());
+      const safeKidsMode = Boolean(kidsMode);
+      const safeToken = null;
 
       const response = await axios.post(
         "https://deltaworld-moodflix-backend.hf.space/recommend",
@@ -91,7 +91,7 @@ export default function ControlCenter({ category }: ControlCenterProps) {
           category: category === "Music" ? "Spotify" : category,
           language,
           era,
-          intensity: safeIntensity,
+          intensity: safeIntensity, // <--- The Fix
           kids_mode: safeKidsMode,
           spotify_token: safeToken,
         },
